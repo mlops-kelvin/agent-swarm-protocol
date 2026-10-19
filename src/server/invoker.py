@@ -3,12 +3,13 @@
 import logging
 from typing import Optional
 
+from src.server.invoke_command import CommandInvokeConfig
 from src.server.invoke_tmux import TmuxInvokeConfig
 from src.server.invoke_zellij import ZellijInvokeConfig
 
 logger = logging.getLogger(__name__)
 
-_VALID_METHODS = ("noop", "tmux", "zellij")
+_VALID_METHODS = ("noop", "tmux", "zellij", "command")
 
 
 class AgentInvoker:
@@ -18,6 +19,8 @@ class AgentInvoker:
       - ``"tmux"``: send notification into a tmux session via send-keys
       - ``"zellij"``: send notification into a zellij session via
         ``write-chars`` + ``send-keys "Enter"``
+      - ``"command"``: hand the notification to a configured command
+        (last argument), e.g. a helper that types into a herdr pane
       - ``"noop"``: do nothing (for testing / dry-run)
     """
 
@@ -26,6 +29,7 @@ class AgentInvoker:
         method: str,
         tmux_config: Optional[TmuxInvokeConfig] = None,
         zellij_config: Optional[ZellijInvokeConfig] = None,
+        command_config: Optional[CommandInvokeConfig] = None,
     ) -> None:
         if method not in _VALID_METHODS:
             raise ValueError(
@@ -44,9 +48,16 @@ class AgentInvoker:
                     "zellij_config required for method 'zellij'. "
                     "Set WAKE_EP_ZELLIJ_SESSION to a zellij session name."
                 )
+        if method == "command":
+            if command_config is None or not command_config.command:
+                raise ValueError(
+                    "command_config required for method 'command'. "
+                    "Set WAKE_EP_COMMAND to the delivery command."
+                )
         self._method = method
         self._tmux_config = tmux_config
         self._zellij_config = zellij_config
+        self._command_config = command_config
 
     @property
     def method(self) -> str:
@@ -62,7 +73,7 @@ class AgentInvoker:
             resume: Reserved for future use (ignored by all methods).
 
         Returns:
-            None for tmux, zellij, and noop methods.
+            None for tmux, zellij, command, and noop methods.
         """
         if self._method == "noop":
             logger.info("noop invoker: skipping invocation")
@@ -72,6 +83,12 @@ class AgentInvoker:
             return None
         if self._method == "zellij":
             await self._invoke_zellij(payload)
+            return None
+        if self._method == "command":
+            from src.server.invoke_command import invoke_command
+
+            assert self._command_config is not None
+            await invoke_command(payload, self._command_config)
             return None
         return None
 

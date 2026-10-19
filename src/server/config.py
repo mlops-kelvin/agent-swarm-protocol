@@ -53,7 +53,7 @@ class WakeEndpointConfig:
 
     Enabled by default.  Set ``WAKE_EP_ENABLED=false`` to disable.
 
-    ``invoke_method``: how to start the agent -- 'tmux', 'zellij', or 'noop'.
+    ``invoke_method``: how to start the agent -- 'tmux', 'zellij', 'command', or 'noop'.
     ``secret``: shared secret for X-Wake-Secret header auth. Empty disables auth.
     ``session_file``: path to session state file for duplicate-invocation guard.
     ``session_timeout_minutes``: how long before an active session is considered expired.
@@ -61,6 +61,8 @@ class WakeEndpointConfig:
     ``zellij_session``: zellij session name for the zellij relay method
         (passed via ``zellij --session``; the focused pane of that
         session receives the notification).
+    ``command``: delivery command for the command method (``WAKE_EP_COMMAND``,
+        split shell-style); the notification is passed as its last argument.
     """
 
     enabled: bool = True
@@ -70,6 +72,7 @@ class WakeEndpointConfig:
     session_timeout_minutes: int = 30
     tmux_target: str = ""
     zellij_session: str = ""
+    command: str = ""
 
 
 @dataclass(frozen=True)
@@ -151,6 +154,13 @@ def load_config_from_env() -> ServerConfig:
             "Set it to a zellij session name (e.g. 'codex')."
         )
 
+    wake_command = os.environ.get("WAKE_EP_COMMAND", "")
+    if wake_ep_enabled and invoke_method == "command" and not wake_command.strip():
+        raise ValueError(
+            "WAKE_EP_COMMAND required when WAKE_EP_INVOKE_METHOD is 'command'. "
+            "Set it to the delivery command; the notification is passed as its last argument."
+        )
+
     private_key_path_env = os.environ.get("AGENT_PRIVATE_KEY_PATH", "")
     private_key_path = Path(private_key_path_env) if private_key_path_env else None
 
@@ -184,5 +194,6 @@ def load_config_from_env() -> ServerConfig:
             ),
             tmux_target=tmux_target,
             zellij_session=zellij_session,
+            command=wake_command,
         ),
     )
